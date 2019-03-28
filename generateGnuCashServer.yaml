@@ -1,9 +1,6 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: >-
-  AWS CloudFormation Sample Template Create a load balanced Jenkins CI server
-  with Docker installed. The application is using CloudWatch logs **WARNING**
-  This template creates an Amazon EC2 instance in an Autoscaling group. You will
-  be billed for the AWS resources used if you create a stack from this template.
+  AWS CloudFormation to create gnucashserver.
 Parameters:
   VpcName:
     Type: AWS::EC2::VPC::Id
@@ -19,7 +16,7 @@ Parameters:
   InstanceType:
     Description: WebServer EC2 instance type
     Type: String
-    Default: t2.medium
+    Default: t2.small
     AllowedValues:
       - t1.micro
       - t2.micro
@@ -160,7 +157,7 @@ Mappings:
       PV64: ami-b96c29d5
       HVM64: ami-286f2a44
 Resources:
-  JenkinsRole:
+  ServerRole:
     Type: 'AWS::IAM::Role'
     Properties:
       AssumeRolePolicyDocument:
@@ -178,7 +175,7 @@ Resources:
         - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
       Path: /
       Policies:
-        - PolicyName: JenkinsRolePolicy
+        - PolicyName: ServerRolePolicy
           PolicyDocument:
             Version: 2012-10-17
             Statement:
@@ -190,14 +187,14 @@ Resources:
               - Effect: Allow
                 Action: 'ecs:*'
                 Resource: '*'
-  JenkinsInstanceProfile:
+  ServerInstanceProfile:
     Type: 'AWS::IAM::InstanceProfile'
     Properties:
       Path: /
       Roles:
-        - !Ref JenkinsRole
+        - !Ref ServerRole
   
-  JenkinsInstance:
+  ServerInstance:
     Type: AWS::EC2::Instance
     Properties:
       ImageId: !FindInMap 
@@ -209,14 +206,20 @@ Resources:
           - Arch
       InstanceType: !Ref InstanceType
       KeyName: !Ref KeyName
-      IamInstanceProfile: !Ref JenkinsInstanceProfile      
+      IamInstanceProfile: !Ref ServerInstanceProfile
       BlockDeviceMappings:
         -
           DeviceName: /dev/xvda
           Ebs:
-            VolumeSize: 100
+            VolumeSize: 8
             VolumeType: 'gp2'
-      NetworkInterfaces: 
+        -
+          DeviceName: /dev/sdi
+          Ebs:
+            VolumeSize: 8
+            VolumeType: 'gp2'
+
+      NetworkInterfaces:
         - AssociatePublicIpAddress: "true"
           DeviceIndex: "0"
           GroupSet: 
@@ -230,242 +233,15 @@ Resources:
             - |
               yum update -y
             - |+
-
+              sudo mkfs -t ext4 /dev/xvdi
             - |
-              yum remove -y java-1.7.0 && yum install -y java-1.8.0-openjdk.x86_64 docker git httpd-tools jq
-            - |+
-              # Disable ssl verification for cobis tfs git, becuase cert issue
+              sudo mkdir /opt/shareddisk
             - |
-              echo '[http "https://192.188.45.137/"]' >> /var/lib/jenkins/.gitconfig
+              sudo sh -c "echo '/dev/xvdi /opt/shareddisk ext4 defaults,nofail 0 2' >> /etc/fstab"
             - |
-              echo 'sslVerify=false' >> /var/lib/jenkins/.gitconfig
+              sudo mount -a
             - |+
 
-              # Install Jenkins
-            - >
-              wget -O /etc/yum.repos.d/jenkins.repo
-              http://pkg.jenkins-ci.org/redhat/jenkins.repo
-            - |
-              rpm --import http://pkg.jenkins-ci.org/redhat/jenkins-ci.org.key
-            - |
-              useradd -d /var/lib/jenkins jenkins
-            - |
-              yum install -y jenkins
-            - |
-              # Add Jenkins user to Docker group
-            - |
-              usermod -a -G docker jenkins
-            - |
-              # Add jenkins user as sudo user without password
-            - |
-              cp /etc/sudoers.d/cloud-init /etc/sudoers.d/jenkins && sed -i 's/ec2-user/jenkins/g' /etc/sudoers.d/jenkins
-            - |
-              service jenkins start
-            - |
-              chkconfig jenkins on
-            - |
-              # Wait 30 seconds to allow Jenkins to startup
-            - |
-              echo "Waiting 30 seconds for Jenkins to start....."
-            - |
-              sleep 30
-            - |
-              # Install the required plugins
-            - |
-              cd /var/lib/jenkins/plugins
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/token-macro.hpi
-            - >
-              curl -O -L
-              https://updates.jenkins-ci.org/latest/docker-build-publish.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/multiple-scms.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/github-api.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/scm-api.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/git-client.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/github.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/git.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/jackson2-api.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/variant.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/jira.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/mailer.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/structs.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/handy-uri-templates-2-api.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/ace-editor.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/jquery-detached.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/junit.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/ssh-credentials.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/apache-httpcomponents-client-4-api.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/docker-commons.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/authentication-tokens.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/jsch.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/mercurial.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/sse-gateway.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/matrix-project.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/script-security.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/cloudbees-bitbucket-branch-source.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/cloudbees-folder.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/workflow-api.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/workflow-scm-step.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/workflow-support.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/workflow-step-api.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/workflow-job.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/display-url-api.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/workflow-cps.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/favorite.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/pubsub-light.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/credentials.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/branch-api.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/workflow-multibranch.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/htmlpublisher.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/pipeline-build-step.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/plain-credentials.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/github-branch-source.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/pipeline-graph-analysis.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/pipeline-stage-step.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/pipeline-input-step.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/workflow-durable-task-step.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/pipeline-model-definition.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/pipeline-stage-tags-metadata.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/plain-credentials.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/credentials-binding.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/durable-task.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/workflow-cps-global-lib.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/workflow-basic-steps.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/git-server.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/pipeline-model-api.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/pipeline-model-extensions.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/docker-workflow.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/pipeline-model-declarative-agent.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/pipeline-milestone-step.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/blueocean.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/blueocean-i18n.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/blueocean-git-pipeline.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/blueocean-core-js.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/blueocean-rest-impl.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/blueocean-config.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/blueocean-events.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/blueocean-dashboard.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/blueocean-autofavorite.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/blueocean-pipeline-api-impl.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/blueocean-commons.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/blueocean-pipeline-editor.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/blueocean-pipeline-scm-api.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/blueocean-bitbucket-pipeline.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/blueocean-personalization.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/blueocean-rest.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/blueocean-github-pipeline.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/jenkins-design-language.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/blueocean-jira.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/blueocean-display-url.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/blueocean-jwt.hpi
-            - |
-              curl -O -L https://updates.jenkins-ci.org/latest/blueocean-web.hpi
-            - |
-              chown jenkins:jenkins *.hpi
-            - |
-              # Restarting Jenkins
-            - |
-              service jenkins restart
-            - |+
-
-              # Install go and s5cmd
-            - |
-              curl -O -L https://dl.google.com/go/go1.11.5.linux-amd64.tar.gz
-            - |
-              tar -C /usr/local -xzf go1.11.5.linux-amd64.tar.gz
-            - |
-              var1=$(grep -i "PATH=" /root/.bash_profile)
-            - |
-              sed -i 's;^PATH=.*;'"$var1"':/usr/local/go/bin;' /root/.bash_profile
-            - |
-              var1=$(grep -i "PATH=" /var/lib/jenkins/.bash_profile)
-            - |
-              sed -i 's;^PATH=.*;'"$var1"':/usr/local/go/bin;' /var/lib/jenkins/.bash_profile
-            - |
-              su jenkins -c "cd && /usr/local/go/bin/go get -u github.com/peakgames/s5cmd"
-            - |+
-
-              # enable docker server
             - |
               sudo chkconfig docker on
             - |+
@@ -477,7 +253,7 @@ Resources:
       Tags:                                      # Tags are an example of a sequence of mappings in YAML,
         -                                        # each key/value pair is separated by a hyphen
           Key: Name
-          Value: !Join [ '-', ['Jenkins', !Ref group] ]
+          Value: !Join [ '-', ['TestServer', !Ref group] ]
         -
           Key: Environment
           Value: Development  
@@ -496,10 +272,6 @@ Resources:
           ToPort: '22'
           CidrIp: !Ref SSHLocation
         - IpProtocol: tcp
-          FromPort: '80'
-          ToPort: '80'
-          CidrIp: 0.0.0.0/0
-        - IpProtocol: tcp
-          FromPort: '8080'
-          ToPort: '8080'
+          FromPort: '6080'
+          ToPort: '6080'
           CidrIp: 0.0.0.0/0
