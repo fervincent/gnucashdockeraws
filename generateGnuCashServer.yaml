@@ -233,6 +233,8 @@ Resources:
             - |
               yum update -y
             - |+
+              sudo yum install -y docker
+            - |
               sudo mkfs -t ext4 /dev/xvdi
             - |
               sudo mkdir /opt/shareddisk
@@ -246,10 +248,6 @@ Resources:
               sudo chkconfig docker on
             - |+
 
-              # Install Ruby and mustache
-            - |
-              gem install mustache
-            - |+            
       Tags:                                      # Tags are an example of a sequence of mappings in YAML,
         -                                        # each key/value pair is separated by a hyphen
           Key: Name
